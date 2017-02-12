@@ -1,5 +1,7 @@
 # guardian.gg
 
+[![Greenkeeper badge](https://badges.greenkeeper.io/DestinyTheGame/guardian.gg.svg)](https://greenkeeper.io/)
+
 The `guardian.gg` module implements the API that is exposed by the `guardian.gg`
 website. This allows you to retrieve stats such as Elo from site.
 
