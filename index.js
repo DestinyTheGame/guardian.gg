@@ -48,11 +48,7 @@ export default class Guardian extends EventEmitter {
   send(options, fn) {
     const template = options.template || {};
     const using = Object.assign({ method: 'GET' }, options || {});
-    const url =  this.format(using.url, Object.assign({
-      displayName: template.displayName || this.username,
-      destinyMembershipId: template.destinyMembershipId || this.id,
-      membershipType: template.membershipType || this.console()
-    }, template));
+    const url =  this.format(using.url, template);
 
     //
     // Small but really important optimization: For GET requests the last thing
@@ -100,32 +96,33 @@ export default class Guardian extends EventEmitter {
       // for valid requests while an ErrorCode of 0 was expected to be save we're
       // going to assume that 0 and 1 are both valid values.
       //
-      if (data.ErrorCode > 1) {
-        debug('we received an error code (%s) from the guardian.gg api for %s', data.ErrorCode, url.href);
-        //
-        // We've reached the throttle limit, so we should defer the request until
-        // we're allowed to request again.
-        //
-        if (data.ErrorCode === 36) {
-          this.queue.remove(method, href, fn);
-          debug('reached throttle limit, rescheduling API call');
-          return setTimeout(send.bind(this, options, fn), 1000 * data.ThrottleSeconds);
-        }
+      if (data.statusCode && data.statusCode !== 200) {
+        debug('we received an error code (%s) from the guardian.gg api for %s', data.statusCode, url.href);
 
         //
         // At this point we don't really know what kind of error we received so we
         // should fail hard and return a new error object.
         //
-        debug('received an error from the api: %s', data.Message);
-        return this.queue.run(method, url, failure(data.Message, data));
+        debug('received an error from the api: %s', data.statusCode);
+        return this.queue.run(method, url, failure('Received incorrect statusCode '+ data.statusCode, data));
+      }
+
+      //
+      // Pre-filter the data. The data structure that is returned from the
+      // guardian.gg API is pretty darn inconsistent. Sometimes we get an array
+      // of results and other times we get an object with a data property and
+      // a custom statusCode property. We want to normalize these edge cases.
+      //
+      if (data.statusCode && 'data' in data) {
+        data = data.data;
       }
 
       //
       // Check if we need filter the data down using our filter property.
       //
-      if (!using.filter) return this.queue.run(method, url, undefined, data.Response);
+      if (!using.filter) return this.queue.run(method, url, undefined, data);
 
-      this.queue.run(method, url, undefined, prop(data.Response, using.filter));
+      this.queue.run(method, url, undefined, prop(data, using.filter));
     };
 
     xhr.send(using.body);
@@ -212,8 +209,9 @@ export default class Guardian extends EventEmitter {
   teamElo(team, fn) {
     return this.send({
       url: 'dtr/elo?alpha={teamArray}',
+      filter: 'players',
       template: {
-        teamArray: team
+        teamArray: team.join(',')
       }
     }, fn);
   }
@@ -248,7 +246,7 @@ export default class Guardian extends EventEmitter {
     return this.send({
       url: 'dtr/{membershipIdArray}',
       template: {
-        membershipIdArray: ids
+        membershipIdArray: ids.join(',')
       }
     }, fn);
   }
